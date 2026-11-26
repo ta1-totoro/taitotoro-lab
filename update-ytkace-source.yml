@@ -65,7 +65,7 @@ jobs:
           source = {
               "name": "YTKACE \u516c\u5f0f\u30ea\u30ea\u30fc\u30b9",
               "identifier": "gumicha.ytkace-official-source",
-              "sourceURL": "https://ta1-totoro.github.io/tag-encyclopedia/ytkace-source.json",
+              "sourceURL": "https://ta1-totoro.github.io/taitotoro-lab/ytkace-source.json",
               "apps": [
                   {
                       "name": "YTKACE",
