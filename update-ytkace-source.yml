@@ -1,0 +1,118 @@
+name: Update YTKACE source
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regenerate ytkace-source.json
+        run: |
+          python3 - <<'PYEOF'
+          import json, re, sys, urllib.request
+
+          API = "https://api.github.com/repos/itzzace/ytkace/releases?per_page=10"
+          req = urllib.request.Request(API, headers={"User-Agent": "ytkace-source-updater"})
+          rels = json.load(urllib.request.urlopen(req))
+
+          MAIN_IPA = re.compile(r"^YTKACE_[\d.]+_YouTube_([\d.]+)\.ipa$")
+
+          def notes(body):
+              body = (body or "").strip()
+              idx = body.find("What's new")
+              if idx > 0:
+                  body = body[idx:]
+              return body.strip()
+
+          versions = []
+          for rel in rels:
+              if rel.get("draft") or rel.get("prerelease"):
+                  continue
+              asset = None
+              ytver = None
+              for a in rel["assets"]:
+                  m = MAIN_IPA.match(a["name"])
+                  if m:
+                      asset = a
+                      ytver = m.group(1)
+                      break
+              if asset is None:
+                  continue
+              ytkace_ver = rel["tag_name"].lstrip("v")
+              versions.append({
+                  "version": ytver,
+                  "buildVersion": ytver,
+                  "date": rel["published_at"][:10],
+                  "localizedDescription": f"YTKACE {ytkace_ver}\uff08YouTube {ytver}\uff09\n\n" + notes(rel.get("body")),
+                  "downloadURL": asset["browser_download_url"],
+                  "size": asset["size"],
+                  "minOSVersion": "17.0",
+              })
+              if len(versions) >= 2:
+                  break
+
+          if not versions:
+              print("No suitable release found; leaving file unchanged.", file=sys.stderr)
+              sys.exit(1)
+
+          source = {
+              "name": "YTKACE \u516c\u5f0f\u30ea\u30ea\u30fc\u30b9",
+              "identifier": "gumicha.ytkace-official-source",
+              "sourceURL": "https://ta1-totoro.github.io/tag-encyclopedia/ytkace-source.json",
+              "apps": [
+                  {
+                      "name": "YTKACE",
+                      "bundleIdentifier": "com.google.ios.youtube",
+                      "developerName": "itzzace",
+                      "subtitle": "\u516c\u5f0fGitHub\u30ea\u30ea\u30fc\u30b9\u306e\u307f\u3092\u6307\u3059\u500b\u4eba\u7528\u30bd\u30fc\u30b9",
+                      "localizedDescription": "YTKACE \u306e\u516c\u5f0fGitHub\u30ea\u30ea\u30fc\u30b9\u306eIPA\u3060\u3051\u3092\u6307\u3059\u3001\u500b\u4eba\u7528\u306eSideStore/AltStore\u30bd\u30fc\u30b9\u3067\u3059\u3002\u7b2c\u4e09\u8005\u306e\u30d5\u30a1\u30a4\u30eb\u306f\u542b\u307e\u308c\u307e\u305b\u3093\u3002",
+                      "tintColor": "#FF0000",
+                      "versions": versions,
+                  }
+              ],
+          }
+
+          out_path = sys.argv[1] if len(sys.argv) > 1 else "ytkace-source.json"
+          with open(out_path, "w", encoding="utf-8") as f:
+              f.write(json.dumps(source, ensure_ascii=False, indent=2) + "\n")
+          print("Wrote", out_path, "versions:", [v["version"] for v in versions])
+          PYEOF
+      - name: Keepalive (avoid 60-day schedule disable)
+        if: always()
+        run: |
+          python3 - <<'PYEOF2'
+          import datetime, os
+          path = ".github/keepalive.txt"
+          today = datetime.date.today()
+          old = None
+          if os.path.exists(path):
+              try:
+                  old = datetime.date.fromisoformat(open(path).read().strip())
+              except Exception:
+                  old = None
+          if old is None or (today - old).days >= 30:
+              with open(path, "w") as f:
+                  f.write(today.isoformat() + "\n")
+              print("keepalive updated:", today)
+          else:
+              print("keepalive still fresh:", old)
+          PYEOF2
+      - name: Commit if changed
+        if: always()
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No changes."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add ytkace-source.json .github/keepalive.txt
+            git commit -m "Update YTKACE source"
+            git push
+          fi
